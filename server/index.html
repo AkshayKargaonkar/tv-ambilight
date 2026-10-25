@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Live</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#ffffff; --text:#151515; --muted:#6b6b66; --line:rgba(0,0,0,.1); --ok:#1a9e55; --bad:#c9443b; --tv:#111; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1013; --card:#171a1f; --text:#eef0f2; --muted:#8a919b; --line:rgba(255,255,255,.1); --ok:#3ccf7d; --bad:#ef6a5f; --tv:#000; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:980px; margin:0 auto; padding:20px 16px 32px; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  h1 { font-size:20px; font-weight:600; margin:0; }
+  .pill { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:3px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--bad); }
+  .on .dot { background:var(--ok); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:16px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .stat b { display:block; font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .stat span { font-size:12px; color:var(--muted); }
+  .tvwrap { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; }
+  #tv { position:relative; width:100%; aspect-ratio:16/10; }
+  #screen { position:absolute; left:7%; top:11%; width:86%; height:78%; image-rendering:pixelated; background:var(--tv); border-radius:4px; }
+  .led { position:absolute; width:1.9%; height:3.2%; transform:translate(-50%,-50%); border-radius:2px; transition:background-color 90ms linear; box-shadow:0 0 0 0.5px var(--line); }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:14px 0 6px; }
+  .row h2 { font-size:14px; font-weight:600; margin:0; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { background:none; border:0; color:var(--muted); font:inherit; font-size:13px; padding:4px 12px; cursor:pointer; }
+  .seg button[aria-pressed=true] { background:var(--text); color:var(--bg); }
+  #strip { display:flex; height:28px; border-radius:6px; overflow:hidden; border:1px solid var(--line); }
+  #strip div { flex:1; transition:background-color 90ms linear; }
+  .marks { display:flex; font-size:11px; color:var(--muted); margin-top:4px; }
+  .marks span { text-align:center; }
+  p.note { font-size:12px; color:var(--muted); margin:14px 0 0; }
+  .controls { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:16px; display:grid; gap:10px; }
+  .ctl { display:grid; grid-template-columns:90px 1fr 48px; align-items:center; gap:12px; font-size:14px; }
+  .ctl output { font-variant-numeric:tabular-nums; text-align:right; font-weight:600; }
+  .ctl input { width:100%; accent-color:var(--text); }
+  .ctlfoot { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted); }
+  .ctlfoot button { background:none; border:1px solid var(--line); color:var(--text); border-radius:6px; padding:3px 10px; font:inherit; cursor:pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LED live</h1>
+    <span class="pill" id="conn"><span class="dot"></span><span id="conntext">waiting for grabber…</span></span>
+    <span class="pill" id="wd" title="Checks the TV grabber every 10 s and restarts it if it stopped">auto-restart: starting…</span>
+    <a href="/logout" style="margin-left:auto;font-size:13px;color:var(--muted)">Sign out</a>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><b id="fps">–</b><span>frames / s</span></div>
+    <div class="stat"><b id="gap">–</b><span>last frame gap</span></div>
+    <div class="stat"><b id="age">–</b><span>since last frame</span></div>
+    <div class="stat"><b id="kbps">–</b><span>grabber data</span></div>
+    <div class="stat"><b id="size">–</b><span>capture size</span></div>
+    <div class="stat"><b id="total">–</b><span>frames received</span></div>
+  </div>
+
+  <div class="controls">
+    <label class="ctl">Saturation <input type="range" id="sat" min="0" max="3" step="0.05" value="1.8"> <output id="satv">1.80</output></label>
+    <label class="ctl">Contrast <input type="range" id="con" min="0.5" max="2.5" step="0.05" value="1"> <output id="conv">1.00</output></label>
+    <label class="ctl" title="0 = instant, 1 = very smooth. Scene cuts and fades to black always respond immediately.">Smoothing <input type="range" id="smo" min="0" max="1" step="0.05" value="0.7"> <output id="smov">0.70</output></label>
+    <label class="ctl" style="grid-template-columns:auto 1fr">
+      <input type="checkbox" id="bars" checked style="width:16px;height:16px">
+      <span>Ignore black bars <span id="barsinfo" style="color:var(--muted);font-size:13px"></span></span>
+    </label>
+    <label class="ctl" style="grid-template-columns:auto 1fr">
+      <input type="checkbox" id="send" checked style="width:16px;height:16px">
+      <span>Send to LED strip <span id="sendinfo" style="color:var(--muted);font-size:13px"></span></span>
+    </label>
+    <div class="ctlfoot"><span id="ctlmsg">Changes the processed LED colours (what the ESP32 gets). Saved automatically.</span><button id="reset">Reset</button></div>
+  </div>
+
+  <div class="tvwrap">
+    <div id="tv"><canvas id="screen" width="32" height="18" aria-label="Latest captured frame"></canvas>
+      <div id="croprect" style="position:absolute;border:2px dashed #3ccf7d;border-radius:3px;pointer-events:none;display:none"></div></div>
+  </div>
+
+  <div class="row">
+    <h2 id="striptitle">Strip</h2>
+    <div class="seg" role="group" aria-label="LED colours">
+      <button id="bProc" aria-pressed="true">Processed (sent to ESP32)</button>
+      <button id="bRaw" aria-pressed="false">Raw averages</button>
+    </div>
+  </div>
+  <div id="strip"></div>
+  <div class="marks" id="marks"></div>
+
+  <p class="note">The screen shows the exact image the TV grabber sends. LEDs run clockwise from the top-left corner. “Processed” is what the ESP32 would get: zone average, blur along the strip, smoothing, saturation boost.</p>
+</main>
+
+<script>
+// LED layout comes from the server (LEDLIVE_LAYOUT): top, right, bottom, left - clockwise from top-left
+let N = 0, TOP = 0, RIGHT = 0, BOTTOM = 0, LEFT = 0;
+function pos(i) {
+  // sides are inset so the four corners don't overlap
+  if (i < TOP) return [6 + (i + .5) / TOP * 88, 4.5];
+  i -= TOP; if (i < RIGHT) return [96.5, 10 + (i + .5) / RIGHT * 80];
+  i -= RIGHT; if (i < BOTTOM) return [94 - (i + .5) / BOTTOM * 88, 95.5];
+  i -= BOTTOM; return [3.5, 90 - (i + .5) / LEFT * 80];
+}
+const tv = document.getElementById('tv'), strip = document.getElementById('strip');
+const leds = [], cells = [];
+function buildLayout(l) {
+  if (!l || (l[0] === TOP && l[1] === RIGHT && l[2] === BOTTOM && l[3] === LEFT)) return;
+  [TOP, RIGHT, BOTTOM, LEFT] = l; N = TOP + RIGHT + BOTTOM + LEFT;
+  leds.forEach(d => d.remove()); cells.forEach(c => c.remove()); leds.length = 0; cells.length = 0;
+  for (let i = 0; i < N; i++) {
+    const d = document.createElement('div'); d.className = 'led';
+    const [x, y] = pos(i); d.style.left = x + '%'; d.style.top = y + '%';
+    tv.appendChild(d); leds.push(d);
+    const c = document.createElement('div'); strip.appendChild(c); cells.push(c);
+  }
+  document.getElementById('striptitle').textContent = 'Strip, LED 1 → ' + N;
+  document.getElementById('marks').innerHTML = [['top', TOP], ['right', RIGHT], ['bottom', BOTTOM], ['left', LEFT]]
+    .map(([n, v]) => `<span style="flex:${v}">${n} ${v}</span>`).join('');
+}
+const cv = document.getElementById('screen'), cx = cv.getContext('2d');
+let mode = 'leds', last = null;
+const $ = id => document.getElementById(id);
+function setMode(m) { mode = m; $('bProc').setAttribute('aria-pressed', m === 'leds'); $('bRaw').setAttribute('aria-pressed', m === 'raw'); if (last) paint(last); }
+$('bProc').onclick = () => setMode('leds'); $('bRaw').onclick = () => setMode('raw');
+
+function paint(s) {
+  if (s.w && s.img) {
+    if (cv.width !== s.w || cv.height !== s.h) { cv.width = s.w; cv.height = s.h; }
+    const im = cx.createImageData(s.w, s.h);
+    for (let p = 0, q = 0; p < s.w * s.h; p++, q += 6) {
+      im.data[p*4] = parseInt(s.img.substr(q, 2), 16);
+      im.data[p*4+1] = parseInt(s.img.substr(q+2, 2), 16);
+      im.data[p*4+2] = parseInt(s.img.substr(q+4, 2), 16);
+      im.data[p*4+3] = 255;
+    }
+    cx.putImageData(im, 0, 0);
+  }
+  const cr = $('croprect'), c = s.crop || [0, 0, 0, 0];
+  if (s.w && (c[0] || c[1] || c[2] || c[3])) {
+    cr.style.left = (7 + 86 * c[2] / s.w) + '%'; cr.style.width = (86 * (s.w - c[2] - c[3]) / s.w) + '%';
+    cr.style.top = (11 + 78 * c[0] / s.h) + '%'; cr.style.height = (78 * (s.h - c[0] - c[1]) / s.h) + '%';
+    cr.style.display = 'block';
+    $('barsinfo').textContent = '— ' + (c[0] ? 'bars top & bottom' : '') + (c[0] && c[2] ? ', ' : '') + (c[2] ? 'bars left & right' : '') + ' detected, LEDs use the picture inside the green outline';
+  } else {
+    cr.style.display = 'none';
+    $('barsinfo').textContent = '— no bars right now';
+  }
+  const hex = s[mode];
+  if (hex && hex.length >= N * 6) for (let i = 0; i < N; i++) {
+    const c = '#' + hex.substr(i * 6, 6); leds[i].style.backgroundColor = c; cells[i].style.backgroundColor = c;
+  }
+}
+
+function stats(s) {
+  const live = s.connected && s.age_ms !== null && s.age_ms < 3000;
+  $('conn').classList.toggle('on', live);
+  $('conntext').textContent = s.connected ? (live ? 'receiving from ' + s.client : 'connected, no frames') : 'waiting for grabber…';
+  $('fps').textContent = s.fps ? s.fps.toFixed(1) : '0';
+  $('gap').textContent = s.gap_ms ? s.gap_ms + ' ms' : '–';
+  $('age').textContent = s.age_ms === null ? '–' : (s.age_ms < 1000 ? s.age_ms + ' ms' : (s.age_ms / 1000).toFixed(1) + ' s');
+  $('kbps').textContent = s.kbps + ' KB/s';
+  $('size').textContent = s.w ? s.w + '×' + s.h : '–';
+  $('total').textContent = s.total;
+  if (s.ddp) $('sendinfo').textContent = '— to ' + s.ddp.host + ', ' + s.ddp.sent + ' packets sent' + (s.ddp.errors ? ', ' + s.ddp.errors + ' failed' : '');
+  if (s.wd) {
+    const ago = t => { const d = Date.now() / 1000 - t; return d < 90 ? Math.round(d) + ' s ago' : Math.round(d / 60) + ' min ago'; };
+    let txt = 'auto-restart: ' + s.wd.status;
+    if (s.wd.restarts) txt += ' · ' + s.wd.restarts + ' restart' + (s.wd.restarts > 1 ? 's' : '') + ', last ' + ago(s.wd.last_restart);
+    $('wd').textContent = txt;
+  }
+}
+
+// ---- saturation / contrast sliders
+const DEFAULTS = { sat_gain: 1.8, contrast: 1.0, smoothing: 0.7 };
+const sliders = { sat_gain: [$('sat'), $('satv')], contrast: [$('con'), $('conv')], smoothing: [$('smo'), $('smov')] };
+let dragging = false, sendTimer = null, synced = false;
+function showVal(k) { const [inp, out] = sliders[k]; out.textContent = (+inp.value).toFixed(2); }
+function send() {
+  const body = {}; for (const k in sliders) body[k] = +sliders[k][0].value;
+  body.black_bars = $('bars').checked ? 1 : 0;
+  body.send = $('send').checked ? 1 : 0;
+  fetch('/params', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(r => { if (r.status === 401) { location.href = '/login'; return; } if (!r.ok) throw 0; $('ctlmsg').textContent = 'Saved'; })
+    .catch(() => { $('ctlmsg').textContent = 'Could not reach the PC receiver'; });
+}
+for (const k in sliders) {
+  const inp = sliders[k][0];
+  inp.addEventListener('input', () => { dragging = true; showVal(k); clearTimeout(sendTimer); sendTimer = setTimeout(send, 80); });
+  inp.addEventListener('change', () => { dragging = false; send(); });
+}
+$('reset').onclick = () => { for (const k in sliders) { sliders[k][0].value = DEFAULTS[k]; showVal(k); } $('bars').checked = true; send(); };
+$('bars').addEventListener('change', send);
+$('send').addEventListener('change', send);
+function syncParams(p) {
+  if (!p || dragging) return;
+  if ('black_bars' in p && document.activeElement !== $('bars')) $('bars').checked = p.black_bars >= 0.5;
+  if ('send' in p && document.activeElement !== $('send')) $('send').checked = p.send >= 0.5;
+  for (const k in sliders) if (k in p && (!synced || document.activeElement !== sliders[k][0])) { sliders[k][0].value = p[k]; showVal(k); }
+  synced = true;
+}
+
+function connect() {
+  const es = new EventSource('/stream');
+  es.onmessage = e => { const s = JSON.parse(e.data); buildLayout(s.layout); stats(s); syncParams(s.params); if (!last || s.seq !== last.seq) paint(s); last = s; };
+  es.onerror = () => {
+    $('conn').classList.remove('on'); $('conntext').textContent = 'lost the receiver – retrying…';
+    // signed out (session expired or revoked)? go to the sign-in page
+    fetch('/', { redirect: 'manual', cache: 'no-store' }).then(r => { if (r.type === 'opaqueredirect') location.href = '/login'; }).catch(() => {});
+  };
+}
+connect();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# personal settings and secrets - never commit
+ambilight.env
+server/auth.json
+server/sessions.json
+server/settings.json
+
+# python / editors
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.apk
+*.bin
