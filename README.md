@@ -2,6 +2,11 @@
 
 **Make an LED strip behind your TV glow with the colours on screen, like Philips Ambilight, for about $30 in parts.**
 
+<p align="center">
+  <img src="docs/live.webp" width="600" alt="Animation: a movie playing on the TV with the 108 LEDs around it glowing in matching colours">
+  <br><sub>15 seconds of real data from the server: the picture the TV captured and the colour sent to each of the 108 LEDs.</sub>
+</p>
+
 The TV captures its own screen, a small always-on Linux computer turns that into one colour per LED, and a tiny ESP32 board running [WLED](https://kno.wled.ge) drives the strip over Wi-Fi. No HDMI splitter, no camera, no capture card.
 
 ```mermaid
