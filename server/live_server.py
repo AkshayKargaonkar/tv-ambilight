@@ -12,6 +12,8 @@ Settings (environment variables, see README):
   LEDLIVE_LAYOUT    LEDs per side: top,right,bottom,left (default 33,21,33,21)
   LEDLIVE_TV_MODEL  part of the TV model name, used to re-find the TV if its IP changes (default: any)
   LEDLIVE_WEB_BIND  127.0.0.1 (this machine only, default) or 0.0.0.0 (whole network)
+  LEDLIVE_HP_BIND   127.0.0.1 (frames via the ADB tunnel, default) or 0.0.0.0 (TV sends directly over Wi-Fi,
+                    ~40 ms faster per frame; only the TV's address is accepted)
 
 Run:  python3 live_server.py
 """
@@ -28,7 +30,8 @@ P = dict(blur_radius=4, smoothing=0.7, sat_gain=1.8, contrast=1.0, gamma=0.75, g
          black_bars=1.0, send=1.0)
 ADJUSTABLE = {"sat_gain": (0.0, 3.0), "contrast": (0.5, 2.5), "black_bars": (0.0, 1.0),
               "send": (0.0, 1.0), "smoothing": (0.0, 1.0)}  # page controls: (min, max)
-BIG_CHANGE = 0.25   # a colour jump this large (0-1, per channel) skips smoothing: scene cuts, fades to black
+BIG_CHANGE = 0.08   # a colour change this large (0-1, per channel) skips smoothing. Measured noise is <0.01
+                    # for 90% of frames, so anything bigger is a real change and should show at once
 SETTINGS = os.path.join(HERE, "settings.json")
 try:
     P.update({k: float(v) for k, v in json.load(open(SETTINGS)).items() if k in ADJUSTABLE})
@@ -333,6 +336,9 @@ def fields(buf):
     return out
 
 
+QUICKACK = getattr(socket, "TCP_QUICKACK", None)   # Linux only
+
+
 def recv_exact(c, n):
     d = bytearray()
     while len(d) < n:
@@ -340,6 +346,10 @@ def recv_exact(c, n):
         if not x:
             raise ConnectionError("closed")
         d += x
+        if QUICKACK:
+            # acknowledge at once: the sender writes the 4-byte length and the picture separately and
+            # waits for this ACK before sending the picture (Linux would otherwise delay it ~40 ms)
+            c.setsockopt(socket.IPPROTO_TCP, QUICKACK, 1)
     return bytes(d)
 
 
@@ -366,12 +376,19 @@ def handle(conn, addr):
             state["connected"] = False; lock.notify_all()
 
 
+HP_BIND = os.environ.get("LEDLIVE_HP_BIND", "127.0.0.1")   # 0.0.0.0 = the TV can connect directly over Wi-Fi
+
+
 def hyperion_server():
     s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("127.0.0.1", HP_PORT)); s.listen(4)
-    print(f"Hyperion receiver on 127.0.0.1:{HP_PORT}", flush=True)
+    s.bind((HP_BIND, HP_PORT)); s.listen(4)
+    print(f"Hyperion receiver on {HP_BIND}:{HP_PORT}", flush=True)
     while True:
         c, a = s.accept()
+        # only the TV (direct Wi-Fi) or this machine (the ADB tunnel) may send frames
+        if a[0] != "127.0.0.1" and a[0] != TV.partition(":")[0]:
+            print(f"[{time.strftime('%H:%M:%S')}] refused frame connection from {a[0]}", flush=True)
+            c.close(); continue
         c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         threading.Thread(target=handle, args=(c, a), daemon=True).start()
 
