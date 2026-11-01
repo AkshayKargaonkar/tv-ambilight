@@ -11,7 +11,7 @@ The TV captures its own screen, a small always-on Linux computer turns that into
 
 ```mermaid
 flowchart LR
-    TV["Android TV<br/>Hyperion Grabber app<br/>captures the screen"] -- "Wi-Fi<br/>32×18 image, 10 fps" --> PC["Linux mini PC / Raspberry Pi<br/>live_server.py<br/>picture → LED colours"]
+    TV["Android TV<br/>Hyperion Grabber app<br/>captures the screen"] -- "Wi-Fi<br/>32×18 image, 15 fps" --> PC["Linux mini PC / Raspberry Pi<br/>live_server.py<br/>picture → LED colours"]
     PC -- "Wi-Fi (DDP)<br/>one colour per LED" --> ESP["ESP32 + WLED"]
     ESP -- "data wire" --> LED["LED strip<br/>around the TV"]
     PC -. "web page" .-> YOU["Phone / laptop<br/>live view + sliders"]
@@ -81,7 +81,7 @@ Tips:
    wget https://github.com/abrenoch/hyperion-android-grabber/releases/download/v1.0/tv-release.apk
    adb install tv-release.apk
    ```
-5. In the grabber: **Manual setup** → Host **your Linux box's IP** (give it a fixed address in your router), Port **19445**, Horizontal **32**, Vertical **18**, *Advanced → Capture rate* **10 fps** → **Save**. (Small and slow on purpose: older TVs stutter when capturing more.)
+5. In the grabber: **Manual setup** → Host **your Linux box's IP** (give it a fixed address in your router), Port **19445**, Horizontal **32**, Vertical **18**, *Advanced → Capture rate* **15 fps** → **Save**. (Small on purpose: older TVs stutter when capturing more. If your video stutters, use 10 fps.)
 
 ### 3. Install the server on the Linux box
 ```bash
@@ -118,7 +118,7 @@ sudo systemctl restart tv-ambilight
 
 ## How it works
 
-1. **Capture:** the Hyperion Grabber app uses Android's screen capture to send a tiny 32×18 picture about 10 times a second. It sends straight to the Linux box over Wi-Fi, which only accepts the TV's address. (Sending through an `adb reverse` tunnel, host `127.0.0.1`, also works, but adds about 40 ms per frame: the grabber writes each frame in two pieces, and the tunnel holds the second piece back.)
+1. **Capture:** the Hyperion Grabber app uses Android's screen capture to send a tiny 32×18 picture up to 15 times a second (only when the picture changes). It sends straight to the Linux box over Wi-Fi, which only accepts the TV's address. (Sending through an `adb reverse` tunnel, host `127.0.0.1`, also works, but adds about 40 ms per frame: the grabber writes each frame in two pieces, and the tunnel holds the second piece back.)
 2. **Picture → LEDs:** black bars are detected and cropped; each LED averages its slice of the picture edge; colours are blurred slightly along the strip, smoothed over time (adaptively), then saturation / brightness / contrast are applied.
 3. **Output:** each frame goes to WLED as one [DDP](http://www.3waylabs.com/ddp/) UDP packet (3 bytes per LED). On a still screen the last colours are re-sent every second so WLED stays in live mode.
 4. **Watchdog:** every 10 s it checks the ADB link, the tunnel and the grabber, and restarts what dropped. Android TVs with little memory sometimes kill background apps.
